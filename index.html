@@ -554,12 +554,125 @@
       color: var(--text-muted);
     }
 
+    /* ── SEARCH ──────────────────────────────────────────────── */
+    .search-wrap {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 2.5rem 2.5rem 0;
+      position: relative;
+    }
+
+    .rule-search-input {
+      width: 100%;
+      background: var(--bg-card);
+      border: 1px solid var(--border-dim);
+      border-radius: 2px;
+      color: var(--text-primary);
+      font-family: var(--font-ui);
+      font-size: 14px;
+      letter-spacing: 0.04em;
+      padding: 12px 16px 12px 42px;
+      outline: none;
+      transition: border-color 0.2s;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239a8a72' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: 14px center;
+    }
+    .rule-search-input::placeholder { color: var(--text-muted); }
+    .rule-search-input::-webkit-search-cancel-button { display: none; }
+    .rule-search-input:focus { border-color: var(--border-accent); }
+
+    .search-results {
+      position: absolute;
+      top: calc(100% - 2px);
+      left: 2.5rem; right: 2.5rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border-mid);
+      border-top: none;
+      border-radius: 0 0 2px 2px;
+      z-index: 50;
+      overflow: hidden;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+    }
+
+    .search-result {
+      display: flex; flex-direction: column; gap: 3px;
+      padding: 12px 16px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border-dim);
+      transition: background 0.15s;
+    }
+    .search-result:last-child { border-bottom: none; }
+    .search-result:hover { background: var(--bg-hover); }
+
+    .search-result-section {
+      font-family: var(--font-ui);
+      font-size: 10px; font-weight: 500;
+      letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--gold);
+    }
+    .search-result-heading {
+      font-family: var(--font-display);
+      font-size: 19px; font-weight: 600;
+      color: var(--text-primary);
+    }
+    .search-result-snippet {
+      font-size: 13px; font-weight: 300;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+    .search-results mark {
+      background: rgba(200, 130, 26, 0.22);
+      color: var(--gold-light);
+      border-radius: 2px;
+      padding: 0 2px;
+    }
+    .search-empty {
+      padding: 16px;
+      font-family: var(--font-ui);
+      font-size: 12px; letter-spacing: 0.10em;
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    /* ── HEADING ANCHORS ─────────────────────────────────────── */
+    .doc-body h1,
+    .doc-body h2,
+    .doc-body h3 { position: relative; }
+
+    .heading-anchor {
+      display: inline-block;
+      margin-left: 0.45em;
+      font-family: var(--font-ui);
+      font-size: 0.6em;
+      font-weight: 400;
+      color: var(--text-muted);
+      text-decoration: none;
+      opacity: 0;
+      transition: opacity 0.15s, color 0.15s;
+      vertical-align: middle;
+      letter-spacing: 0;
+      user-select: none;
+    }
+    .doc-body h1:hover .heading-anchor,
+    .doc-body h2:hover .heading-anchor,
+    .doc-body h3:hover .heading-anchor { opacity: 1; }
+    .heading-anchor:hover { color: var(--gold-light); }
+    .heading-anchor.copied { color: var(--gold); opacity: 1; }
+    .heading-anchor.copied::after {
+      content: ' copied!';
+      font-size: 11px;
+      letter-spacing: 0.08em;
+    }
+
     /* ── RESPONSIVE ──────────────────────────────────────────── */
     @media (max-width: 720px) {
       nav { padding: 0 1.25rem; }
       .nav-links { display: none; }
       .nav-hamburger { display: flex; }
       .hero { padding: 80px 1.5rem 60px; }
+      .search-wrap { padding: 1.5rem 1.5rem 0; }
+      .search-results { left: 1.5rem; right: 1.5rem; }
       .rules-wrapper {
         grid-template-columns: 1fr;
         padding: 2rem 1.5rem 4rem;
@@ -621,6 +734,11 @@
 
 <!-- RULES -->
 <div class="rules-outer" id="rules">
+  <div class="search-wrap">
+    <input type="search" id="rule-search" class="rule-search-input"
+           placeholder="Search rules…" autocomplete="off" spellcheck="false">
+    <div id="search-results" class="search-results" hidden></div>
+  </div>
   <div class="rules-wrapper">
     <aside class="rules-sidebar">
       <p class="sidebar-heading">Sections</p>
@@ -657,7 +775,7 @@
   })();
 
   (async () => {
-    // Load config
+    // ── Config ────────────────────────────────────────────────
     let CONFIG;
     try {
       const res = await fetch('config.json');
@@ -667,28 +785,25 @@
       return;
     }
 
-    // Inject Discord URLs
     document.getElementById('discord-nav').href    = CONFIG.discordUrl;
     document.getElementById('discord-hero').href   = CONFIG.discordUrl;
     document.getElementById('discord-mobile').href = CONFIG.discordUrl;
 
-    const sidebarNav  = document.getElementById('sidebar-nav');
+    const sidebarNav   = document.getElementById('sidebar-nav');
     const rulesContent = document.getElementById('rules-content');
-    const cache = {};
+    const cache        = {};
 
-    // Build sidebar + content shells from config
+    // ── Build sidebar + content shells ────────────────────────
     CONFIG.sections.forEach((sec, i) => {
-      // Sidebar link
       const li = document.createElement('li');
       const a  = document.createElement('a');
-      a.href      = `#${sec.id}`;
+      a.href        = '#' + sec.id;
       a.textContent = sec.title;
       a.dataset.id  = sec.id;
       if (i === 0) a.classList.add('active');
       li.appendChild(a);
       sidebarNav.appendChild(li);
 
-      // Content shell
       const div = document.createElement('div');
       div.className = 'rules-section' + (i === 0 ? ' active' : '');
       div.id = `section-${sec.id}`;
@@ -707,33 +822,37 @@
       rulesContent.appendChild(div);
     });
 
-    // Switch section on sidebar click
+    // ── Section activation ────────────────────────────────────
+    function activateSection(id) {
+      document.querySelectorAll('.sidebar-nav a').forEach(a => a.classList.remove('active'));
+      document.querySelectorAll('.rules-section').forEach(s => s.classList.remove('active'));
+      const link    = document.querySelector(`.sidebar-nav a[data-id="${id}"]`);
+      const section = document.getElementById(`section-${id}`);
+      if (!link || !section) return;
+      link.classList.add('active');
+      section.classList.add('active');
+      history.replaceState(null, '', '#' + id);
+    }
+
     sidebarNav.addEventListener('click', e => {
       const link = e.target.closest('a[data-id]');
       if (!link) return;
       e.preventDefault();
-      const id = link.dataset.id;
-
-      document.querySelectorAll('.sidebar-nav a').forEach(a => a.classList.remove('active'));
-      document.querySelectorAll('.rules-section').forEach(s => s.classList.remove('active'));
-      link.classList.add('active');
-      document.getElementById(`section-${id}`).classList.add('active');
-
-      if (!cache[id]) loadSection(id);
+      activateSection(link.dataset.id);
+      if (!cache[link.dataset.id]) loadSection(link.dataset.id);
     });
 
-    // Fetch a pre-built HTML fragment
+    // ── Content loading ───────────────────────────────────────
     async function loadSection(id) {
-      const sec = CONFIG.sections.find(s => s.id === id);
+      const sec       = CONFIG.sections.find(s => s.id === id);
       const container = document.getElementById(`doc-${id}`);
       if (!sec || !container) return;
-
       try {
         const res = await fetch(sec.file);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const html = await res.text();
-        container.innerHTML = html;
+        container.innerHTML = await res.text();
         cache[id] = true;
+        addHeadingAnchors(container);
       } catch {
         container.innerHTML = `
           <div class="doc-error">
@@ -743,8 +862,153 @@
       }
     }
 
-    // Load first section
-    loadSection(CONFIG.sections[0].id);
+    // ── Heading anchor links ──────────────────────────────────
+    function addHeadingAnchors(container) {
+      container.querySelectorAll('h1[id], h2[id], h3[id]').forEach(h => {
+        const btn = document.createElement('a');
+        btn.className   = 'heading-anchor';
+        btn.href        = '#' + h.id;
+        btn.title       = 'Copy link to this rule';
+        btn.textContent = '#';
+        btn.addEventListener('click', e => {
+          e.preventDefault();
+          const url = location.origin + location.pathname + '#' + h.id;
+          navigator.clipboard.writeText(url)
+            .then(() => {
+              btn.classList.add('copied');
+              setTimeout(() => btn.classList.remove('copied'), 2000);
+            })
+            .catch(() => prompt('Copy this link:', url));
+        });
+        h.appendChild(btn);
+      });
+    }
+
+    // ── Deep link / hash navigation ───────────────────────────
+    function sectionForHash(hash) {
+      const id = hash.replace(/^#/, '');
+      // Exact section match
+      const direct = CONFIG.sections.find(s => s.id === id);
+      if (direct) return { section: direct.id, headingId: null };
+      // Heading id — prefixed with sectionId (e.g. "general-nlr")
+      const owner = CONFIG.sections.find(s => id.startsWith(s.id + '-'));
+      if (owner) return { section: owner.id, headingId: id };
+      return null;
+    }
+
+    async function navigateToHash(hash) {
+      if (!hash || hash === '#') return;
+      const match = sectionForHash(hash);
+      if (!match) return;
+
+      activateSection(match.section);
+      if (!cache[match.section]) await loadSection(match.section);
+
+      if (match.headingId) {
+        await new Promise(r => setTimeout(r, 80));
+        const el = document.getElementById(match.headingId);
+        if (el) {
+          const navH = parseInt(getComputedStyle(document.documentElement)
+                        .getPropertyValue('--nav-h')) + 24;
+          window.scrollTo({ top: el.getBoundingClientRect().top + scrollY - navH, behavior: 'smooth' });
+          history.replaceState(null, '', '#' + match.headingId);
+        }
+      }
+    }
+
+    window.addEventListener('hashchange', () => navigateToHash(location.hash));
+
+    // ── Search ────────────────────────────────────────────────
+    let searchIndex = [];
+    fetch('search-index.json')
+      .then(r => r.ok ? r.json() : [])
+      .then(data => { searchIndex = data; })
+      .catch(() => {});
+
+    const searchInput   = document.getElementById('rule-search');
+    const searchResults = document.getElementById('search-results');
+
+    function escHtml(str) {
+      return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function highlight(str, q) {
+      const i = str.toLowerCase().indexOf(q);
+      if (i === -1) return escHtml(str);
+      return escHtml(str.slice(0, i))
+        + '<mark>' + escHtml(str.slice(i, i + q.length)) + '</mark>'
+        + escHtml(str.slice(i + q.length));
+    }
+
+    searchInput.addEventListener('input', () => {
+      const q = searchInput.value.trim().toLowerCase();
+      if (q.length < 2) { searchResults.hidden = true; searchResults.innerHTML = ''; return; }
+
+      const matches = searchIndex
+        .filter(e => e.heading.toLowerCase().includes(q) || e.text.toLowerCase().includes(q))
+        .slice(0, 8);
+
+      if (!matches.length) {
+        searchResults.innerHTML = '<div class="search-empty">No results found</div>';
+        searchResults.hidden = false;
+        return;
+      }
+
+      searchResults.innerHTML = matches.map(m => {
+        const label   = CONFIG.sections.find(s => s.id === m.section)?.title || m.section;
+        const snippet = m.text ? m.text.slice(0, 110) + (m.text.length > 110 ? '…' : '') : '';
+        return `<div class="search-result" data-section="${m.section}" data-slug="${m.slug}">
+          <span class="search-result-section">${escHtml(label)}</span>
+          <span class="search-result-heading">${highlight(m.heading, q)}</span>
+          ${snippet ? `<span class="search-result-snippet">${highlight(snippet, q)}</span>` : ''}
+        </div>`;
+      }).join('');
+      searchResults.hidden = false;
+    });
+
+    searchResults.addEventListener('click', async e => {
+      const item = e.target.closest('.search-result');
+      if (!item) return;
+      const { section, slug } = item.dataset;
+      searchInput.value = '';
+      searchResults.hidden = true;
+      activateSection(section);
+      if (!cache[section]) await loadSection(section);
+      await new Promise(r => setTimeout(r, 80));
+      const el = document.getElementById(slug);
+      if (el) {
+        const navH = parseInt(getComputedStyle(document.documentElement)
+                      .getPropertyValue('--nav-h')) + 24;
+        window.scrollTo({ top: el.getBoundingClientRect().top + scrollY - navH, behavior: 'smooth' });
+        history.replaceState(null, '', '#' + slug);
+      }
+    });
+
+    document.addEventListener('click', e => {
+      if (!e.target.closest('.search-wrap')) searchResults.hidden = true;
+    });
+
+    searchInput.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { searchResults.hidden = true; searchInput.blur(); }
+    });
+
+    // ── Initial load ──────────────────────────────────────────
+    const initHash  = location.hash;
+    const initMatch = initHash ? sectionForHash(initHash) : null;
+    const initId    = initMatch ? initMatch.section : CONFIG.sections[0].id;
+
+    activateSection(initId);
+    await loadSection(initId);
+
+    if (initMatch?.headingId) {
+      await new Promise(r => setTimeout(r, 100));
+      const el = document.getElementById(initMatch.headingId);
+      if (el) {
+        const navH = parseInt(getComputedStyle(document.documentElement)
+                      .getPropertyValue('--nav-h')) + 24;
+        window.scrollTo({ top: el.getBoundingClientRect().top + scrollY - navH, behavior: 'smooth' });
+      }
+    }
   })();
 </script>
 </body>

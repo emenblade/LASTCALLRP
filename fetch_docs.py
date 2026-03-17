@@ -16,6 +16,11 @@ import urllib.request
 from html.parser import HTMLParser
 
 
+def slugify(text):
+    """Convert heading text to a URL-safe slug."""
+    return re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-')
+
+
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
 
 
@@ -92,6 +97,66 @@ class DocCleaner(HTMLParser):
         return html.strip()
 
 
+# ── Search index helpers ──────────────────────────────────────────────────────
+
+def enrich_html(section_id: str, html: str):
+    """
+    1. Injects id="<section_id>-<slug>" onto every h1/h2/h3 that lacks one.
+    2. Returns (enriched_html, [index_entries]) where each entry is:
+       { section, heading, slug, text }  — text is the first ~250 chars of
+       the paragraph(s) that follow the heading.
+    """
+    # Add id attributes to bare headings
+    def add_id(m):
+        tag, content = m.group(1), m.group(2)
+        text = re.sub(r'<[^>]+>', '', content).strip()
+        slug = slugify(text)
+        if not slug:
+            return m.group(0)
+        return f'<{tag} id="{section_id}-{slug}">{content}</{tag}>'
+
+    enriched = re.sub(
+        r'<(h[1-3])>(.*?)</h[1-3]>',
+        add_id,
+        html,
+        flags=re.DOTALL
+    )
+
+    # Extract index entries by splitting on headings
+    entries = []
+    parts = re.split(r'(<h[1-3][^>]*>.*?</h[1-3]>)', enriched, flags=re.DOTALL)
+
+    for i, part in enumerate(parts):
+        m = re.match(r'<h[1-3][^>]*\sid="([^"]+)"[^>]*>(.*?)</h[1-3]>', part, re.DOTALL)
+        if not m:
+            continue
+        slug         = m.group(1)
+        heading_text = re.sub(r'<[^>]+>', '', m.group(2)).strip()
+
+        # Collect plain text from the chunk(s) immediately after this heading
+        snippet_parts = []
+        j = i + 1
+        while j < len(parts) and not re.match(r'<h[1-3]', parts[j]):
+            plain = re.sub(r'<[^>]+>', ' ', parts[j])
+            plain = re.sub(r'\s+', ' ', plain).strip()
+            if plain:
+                snippet_parts.append(plain)
+            j += 1
+            if sum(len(p) for p in snippet_parts) >= 250:
+                break
+
+        snippet = ' '.join(snippet_parts)[:250]
+
+        entries.append({
+            'section': section_id,
+            'heading': heading_text,
+            'slug':    slug,
+            'text':    snippet,
+        })
+
+    return enriched, entries
+
+
 # ── Fetch ─────────────────────────────────────────────────────────────────────
 
 def fetch_doc(doc_id: str) -> str:
@@ -104,38 +169,44 @@ def fetch_doc(doc_id: str) -> str:
         return resp.read().decode("utf-8")
 
 
-def process_section(section: dict, rules_dir: str) -> bool:
-    doc_id   = (section.get("docId") or "").strip()
-    filename = (section.get("file") or "").lstrip("/")
-    title    = section.get("title", "Untitled")
+def process_section(section: dict, rules_dir: str):
+    """
+    Returns (success: bool, index_entries: list).
+    """
+    doc_id    = (section.get("docId") or "").strip()
+    filename  = (section.get("file") or "").lstrip("/")
+    section_id = section.get("id", "")
+    title     = section.get("title", "Untitled")
 
     if not doc_id:
         print(f"  [skip] {title} — no docId configured")
-        return False
+        return False, []
 
     if not filename:
         print(f"  [skip] {title} — no file path configured")
-        return False
+        return False, []
 
     print(f"  [fetch] {title} ...")
     try:
         raw_html = fetch_doc(doc_id)
     except Exception as exc:
         print(f"  [error] Could not fetch {title}: {exc}")
-        return False
+        return False, []
 
     cleaner = DocCleaner()
     cleaner.feed(raw_html)
     clean = cleaner.result()
 
+    enriched, entries = enrich_html(section_id, clean)
+
     out_path = os.path.join(os.path.dirname(__file__), filename)
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
     with open(out_path, "w", encoding="utf-8") as f:
-        f.write(clean)
+        f.write(enriched)
 
-    print(f"  [ok]    Saved → {filename}")
-    return True
+    print(f"  [ok]    Saved → {filename}  ({len(entries)} index entries)")
+    return True, entries
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -154,9 +225,19 @@ def main():
         sys.exit(0)
 
     print(f"Fetching {len(sections)} section(s)...\n")
-    results = [process_section(s, "rules") for s in sections]
-    fetched = sum(1 for r in results if r)
-    print(f"\nDone. {fetched}/{len(sections)} section(s) updated.")
+    all_entries = []
+    fetched = 0
+    for s in sections:
+        ok, entries = process_section(s, "rules")
+        if ok:
+            fetched += 1
+            all_entries.extend(entries)
+
+    index_path = os.path.join(os.path.dirname(__file__), "search-index.json")
+    with open(index_path, "w", encoding="utf-8") as f:
+        json.dump(all_entries, f, ensure_ascii=False, separators=(',', ':'))
+    print(f"\nWrote search-index.json ({len(all_entries)} entries)")
+    print(f"Done. {fetched}/{len(sections)} section(s) updated.")
 
 
 if __name__ == "__main__":
